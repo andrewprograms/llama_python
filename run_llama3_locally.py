@@ -1,25 +1,26 @@
 # working 6-30-2024
+# this script is an example of how to use the LLaMA model to generate text in python locally without apps like ollama
 # this script uses torch/cuda to run the model on gpu (if available), and lets you know in a print statement which one it's using
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-import torch  # Ensure torch is imported
-import tkinter as tk
-from tkinter import scrolledtext
-from tkinter import messagebox
-import time
-import threading
-from torch.quantization import quantize_dynamic
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig # Import the transformers stuff for the LLaMA model
+import torch  # Import torch for running the model on gpu
+import tkinter as tk # Import the Tkinter package for the gui
+from tkinter import scrolledtext # Import the ScrolledText widget for the gui
+from tkinter import messagebox # Import the messagebox widget for the gui
+import time # Import the time package for tracking the time it takes to generate the text
+import threading # Import the threading package for tracking the time it takes to generate the text
 
 
 # --- Module: Application Setup ---
 class LLMGUI:
     def __init__(self, root):
-        self.root = root
-        self.setup_main_window()
-        self.create_widgets()
-        self.timer_running = False
-        self.start_time = 0
-        self.max_length = 50
+        """ Initializes the GUI, starting parameters, and initializes the model """
+        self.root = root # Set the root of the GUI
+        self.setup_main_window() # Set up the main window
+        self.create_widgets() # Create the widgets for the GUI
+        self.timer_running = False # strt state of the timer
+        self.start_time = 0 # the start time of the timer
+        self.max_length = 50 # the maximum length of the generated text
         self.num_return_sequences = 1 # model generates this many sequences. 2 = 2x computation required
         self.no_repeat_ngram_size = 3 # prevents the model from reapeating any x-word phrases. Improves quality.
         self.top_k = 2 # limits the sampling to the top k most likely next tokens
@@ -32,91 +33,109 @@ class LLMGUI:
 
 
     def setup_main_window(self):
-        self.root.title("I am a llama farmer")
-        self.root.geometry("900x600")  # Width x Height
+        self.root.title("I am a llama farmer") # Set the title of the window
+        self.root.geometry("900x600")  # Width x Height of the window
 
     def create_widgets(self):
+        """ Creates the widgets for the GUI """
         # Input and output frames setup
-        self.input_frame = tk.Frame(self.root, width=400, height=500, bg='lightgray')
-        self.input_frame.grid(row=0, column=0, sticky="nsew")
-        self.output_frame = tk.Frame(self.root, width=400, height=500, bg='white')
-        self.output_frame.grid(row=0, column=1, sticky="nsew")
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
+        self.input_frame = tk.Frame(self.root, width=400, height=500, bg='lightgray') # Create the input frame
+        self.input_frame.grid(row=0, column=0, sticky="nsew") # Position the input frame
+        self.output_frame = tk.Frame(self.root, width=400, height=500, bg='white') # Create the output frame
+        self.output_frame.grid(row=0, column=1, sticky="nsew") # Position the output frame
+        self.root.grid_columnconfigure(0, weight=1) # Set the weight of the input frame
+        self.root.grid_columnconfigure(1, weight=1) # Set the weight of the output frame
 
         # Input and output text boxes
-        self.input_text = scrolledtext.ScrolledText(self.input_frame, wrap=tk.WORD, font=('Helvetica', 12), bg='white', fg='black')
-        self.input_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-        self.submit_button = tk.Button(self.input_frame, text="Submit", font=('Helvetica', 12), command=self.start_process)
-        self.submit_button.pack(padx=10, pady=10, ipadx=5, ipady=5)
-        self.output_text = scrolledtext.ScrolledText(self.output_frame, wrap=tk.WORD, font=('Helvetica', 12), bg='white', fg='darkblue')
-        self.output_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        self.input_text = scrolledtext.ScrolledText(self.input_frame, wrap=tk.WORD, font=('Helvetica', 12), bg='white', fg='black') # Create the input text box
+        self.input_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True) # Position the input text box
+        self.submit_button = tk.Button(self.input_frame, text="Submit", font=('Helvetica', 12), command=self.start_process) # Create the submit button
+        self.submit_button.pack(padx=10, pady=10, ipadx=5, ipady=5) # Position the submit button
+        self.output_text = scrolledtext.ScrolledText(self.output_frame, wrap=tk.WORD, font=('Helvetica', 12), bg='white', fg='darkblue') # Create the output text box
+        self.output_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True) # Position the output text box
 
     def start_process(self):
-        prompt = self.input_text.get("1.0", tk.END).strip()
-        if not prompt:
-            messagebox.showinfo("Error", "Please enter some text before submitting.")
-            return
-        if len(prompt) > (self.max_length):
-            messagebox.showinfo("Error", "Please reduce input length")
-            return
-        self.timer_running = True
-        threading.Thread(target=self.process_input, args=(prompt,)).start()
-        self.start_time = time.time()
-        threading.Thread(target=self.update_timer).start()
-
+        """ Starts the process of generating text """
+        prompt = self.input_text.get("1.0", tk.END).strip() # Get the text from the input box
+        if not prompt: # Check if the input is empty
+            messagebox.showinfo("Error", "Please enter some text before submitting.") # If the input is empty, show an error message
+            return # Exit the function
+        if len(prompt) > (self.max_length): # Check if the input is too long
+            messagebox.showinfo("Error", "Please reduce input length") # If the input is too long, show an error message
+            return # Exit the function
+        # Start timer
+        self.timer_running = True # Start the timer
+        threading.Thread(target=self.process_input, args=(prompt,)).start() # Start the thread to process the input
+        self.start_time = time.time() # Timer
+        threading.Thread(target=self.update_timer).start() # Update the timer
         
 
     def process_input(self, prompt):
-        self.inputs = input_token_mod(self.tokenizer, prompt, self.device)
-        simulated_output = self.simulate_llm_response(self.inputs)
-        elapsed_time = time.time() - self.start_time
-        self.timer_running = False
-        self.output_text.delete('1.0', tk.END)
-        display_output = f"{simulated_output}\n\nProcessing Time: {elapsed_time:.2f} seconds"
-        self.output_text.insert(tk.END, display_output)
+        """ Processes the input and generates text """
+        self.inputs = input_token_mod(self.tokenizer, prompt, self.device) # Tokenize and move the input to the specified device
+        simulated_output = self.simulate_llm_response(self.inputs) # Simulate the response from the LLM
+        elapsed_time = time.time() - self.start_time # Get the elapsed time
+        self.timer_running = False # Stop the timer
+        self.output_text.delete('1.0', tk.END) # Clear the output text
+        display_output = f"{simulated_output}\n\nProcessing Time: {elapsed_time:.2f} seconds" # Display the output
+        self.output_text.insert(tk.END, display_output) # Insert the output
 
     def update_timer(self):
+        """ Updates the timer """
         while self.timer_running:
-            elapsed_time = time.time() - self.start_time
-            self.output_text.delete('1.0', tk.END)
-            self.output_text.insert(tk.END, f"Processing... {elapsed_time:.2f} seconds")
+            elapsed_time = time.time() - self.start_time # Get the elapsed time
+            self.output_text.delete('1.0', tk.END) # Clear the output text
+            self.output_text.insert(tk.END, f"Processing... {elapsed_time:.2f} seconds") # Insert the output
             time.sleep(0.1)
 
     def simulate_llm_response(self, input_text):
-        self.outputs = generate_text(self.model, self.tokenizer, self.inputs, self.num_return_sequences, self.no_repeat_ngram_size, self.max_length, self.top_k, self.top_p, self.temperature)
-        generated_text = decode_output(self.tokenizer, self.outputs, self.skip_special_tokens)
-        print(generated_text)
-        
-        return generated_text
+        """" Simulates the response from the LLM """
+        self.outputs = generate_text( # Generate the text based on the self parameters below
+            self.model,
+            self.tokenizer,
+            self.inputs,
+            self.num_return_sequences,
+            self.no_repeat_ngram_size,
+            self.max_length,
+            self.top_k,
+            self.top_p,
+            self.temperature
+        )
+        generated_text = decode_output(self.tokenizer, self.outputs, self.skip_special_tokens) # Decode the output
+        print(generated_text) # Print the output into the terminal
+        return generated_text # Return the output
 
 
 def intialize_model_mod():
+    """ Initializes the model and tokenizer """
     # Check for CUDA availability and set the device
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"Using device: {device}")
+    device = 'cuda' if torch.cuda.is_available() else 'cpu' # Set the device to GPU if available
+    print(f"Using device: {device}") # Print the device being used
 
     # Load tokenizer and model
     print("loading tokenizer")
-    model_directory = r"C:\Path\To\Your\Llama\Directory"
-    config = AutoConfig.from_pretrained(model_directory)
-    tokenizer = AutoTokenizer.from_pretrained(model_directory)
+    model_directory = r"C:\Path\To\Your\Llama\Directory" # Set this to the directory where you have the model downloaded
+    config = AutoConfig.from_pretrained(model_directory) # Load the config file
+    tokenizer = AutoTokenizer.from_pretrained(model_directory) # Load the tokenizer
     print("loading model")
-    model = AutoModelForCausalLM.from_pretrained(model_directory, config=config)
+    model = AutoModelForCausalLM.from_pretrained(model_directory, config=config) # Load the model
 
     # Move model to the specified device (GPU or CPU)
-    model.to(device)
+    print("moving model to device", device)
+    model.to(device) # Move the model to the specified device
     
-    return tokenizer, model, device
+    return tokenizer, model, device # Return the tokenizer, model, and device
 
 
 def input_token_mod(tokenizer, prompt, device):
+    """ Tokenizes the input and moves it to the specified device. """
     # Tokenize input text and move tokens to the same device as model
     print("creating input")
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
-    return inputs
+    inputs = tokenizer(prompt, return_tensors="pt").to(device) # Tokenize and move the input to the specified device
+    return inputs # Return the input
 
 def generate_text(model, tokenizer, inputs, num_return_sequences, no_repeat_ngram_size, max_length, top_k, top_p, temperature):
+    """ Generates text using the model """
     # Generate text
     print("creating output")
     outputs = model.generate(
@@ -135,33 +154,16 @@ def generate_text(model, tokenizer, inputs, num_return_sequences, no_repeat_ngra
     return outputs
 
 def decode_output(tokenizer, outputs, skip_special_tokens):
+    """ Decodes the output and returns the generated text """
     # Decode and return generated text
-    return tokenizer.decode(outputs[0], skip_special_tokens=skip_special_tokens)
+    return tokenizer.decode(outputs[0], skip_special_tokens=skip_special_tokens) # Decode the output
 
 def main():
-    # Initialization parameters
-    """
-        max_length: Specifies the maximum length of the generated text in tokens. In your example, it's set to 5000 tokens, meaning the maximum output length should not exceed this limit.
-
-        num_return_sequences: Defines how many different sequences or completions you want the model to generate. Set to 1 and the model will generate one output sequence.
-
-        no_repeat_ngram_size: Prevents the model from generating repetitive sequences by setting a limit on how often specific n-grams (sequences of n tokens) can appear consecutively.
-            Set to 2 means that the model will avoid repeating any two-token sequence in its outputs.
-
-        top_k: Limits the sampling to the top k most likely next tokens. It restricts the model from considering tokens with lower probabilities
-            during text generation. In your example, top_k is set to 50, so the model will only consider the top 50 tokens with the highest probabilities for each token position.
-
-        top_p (nucleus sampling): Controls diversity by choosing the smallest set of tokens whose cumulative probability exceeds this threshold p.
-            It allows for dynamic sampling where more tokens are considered if necessary. In your case, top_p is set to 0.95, meaning the model will consider tokens until the cumulative probability reaches 95%.
-
-        Temperature: Controls the randomness of predictions by scaling the logits before applying softmax during sampling. Lower values make the model 
-        more deterministic and repetitive, while higher values increase diversity and randomness. A temperature of 0.7 (as in your example) 
-        tends to produce slightly conservative outputs, balancing between generating novel responses and staying close to probable predictions.
-    """
-    root = tk.Tk()
-    app = LLMGUI(root)
-    root.mainloop()
+    """ Main function """
+    root = tk.Tk() # Create the Tkinter window
+    app = LLMGUI(root) # Create the LLMGUI object
+    root.mainloop() # Start the Tkinter event loop
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": # Check if the script is being run directly
+    main() # Call the main function
